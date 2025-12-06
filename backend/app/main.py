@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import engine, Base
 
 # Импортируем все роутеры (API endpoints)
-from app.api import auth, tutors, chats, messages, feedbacks
+from app.api import auth, tutors, chats, messages, feedbacks, progress
 
 
 # === СОЗДАНИЕ ПРИЛОЖЕНИЯ ===
@@ -45,6 +45,8 @@ app.include_router(tutors.router)      # /api/tutors/*
 app.include_router(chats.router)       # /api/chats/*
 app.include_router(messages.router)    # /api/chats/{id}/messages/*
 app.include_router(feedbacks.router)   # /api/feedbacks/*
+app.include_router(progress.router)    # /api/progress/*
+
 
 
 # === БАЗОВЫЕ ENDPOINTS ===

@@ -9,6 +9,7 @@ from app.models.tutor import Tutor
 from app.models.chat import Chat
 from app.models.message import Message
 from app.models.feedback import Feedback
+from app.models.progress import Progress
 
 # Экспортируем все модели
-__all__ = ["User", "Course", "Tutor", "Chat", "Message", "Feedback"]
+__all__ = ["User", "Course", "Tutor", "Chat", "Message", "Feedback", "Progress"]

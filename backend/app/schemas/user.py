@@ -56,6 +56,7 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     is_active: bool
     created_at: datetime
+    preferences: Optional[dict] = None
     
     class Config:
         # Позволяет создавать схему из SQLAlchemy модели
@@ -70,6 +71,17 @@ class UserResponse(BaseModel):
     #   "is_active": true,
     #   "created_at": "2025-12-06T14:30:00Z"
     # }
+
+
+
+
+class UserSettingsUpdate(BaseModel):
+    """
+    Обновление настроек пользователя.
+    Пока только тема, но можно расширять.
+    """
+    theme: Optional[str] = None  # "light" | "dark" | что-то ещё
+
 
 
 # === СХЕМА ДЛЯ JWT ТОКЕНА ===
@@ -92,3 +104,14 @@ class TokenData(BaseModel):
     """Данные, которые хранятся внутри JWT токена"""
     user_id: int
     username: str
+
+
+# === СМЕНА ПАРОЛЯ ПОЛЬЗОВАТЕЛЯ ===
+class ChangePasswordRequest(BaseModel):
+    """
+    Данные для смены пароля.
+    Старый пароль + новый пароль.
+    """
+    old_password: str
+    new_password: str
+

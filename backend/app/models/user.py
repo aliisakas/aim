@@ -3,7 +3,7 @@
 Эта модель описывает таблицу 'users' в PostgreSQL
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -23,6 +23,8 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)  # Хешированный пароль
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True)  # Активен ли пользователь
+    preferences = Column(JSON, nullable=True)  # Настройки пользователя (например, тема)
+
     
     # Автоматические временные метки
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -34,6 +36,13 @@ class User(Base):
     
     # Один пользователь может оставить много отзывов
     feedbacks = relationship("Feedback", back_populates="user", cascade="all, delete-orphan")
+
+    progress_items = relationship(
+        "Progress",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     
     def __repr__(self):
         """Для удобного отображения в логах"""

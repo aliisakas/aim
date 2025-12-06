@@ -5,7 +5,7 @@ API endpoints для работы с сообщениями.
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, delete
 from typing import Optional
 from datetime import datetime
 from app.database import get_db
@@ -254,3 +254,43 @@ async def send_message(
         "user_message": user_message,
         "ai_response": ai_message
     }
+
+
+
+
+
+@router.delete(
+    "/{chat_id}/messages",
+    status_code=204,
+    summary="Clear chat history",
+    description="Удалить все сообщения в чате текущего пользователя",
+)
+async def clear_chat_messages(
+    chat_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Проверяем, что чат принадлежит текущему пользователю
+    result = await db.execute(
+        select(Chat).where(
+            Chat.id == chat_id,
+            Chat.user_id == current_user.id,
+        )
+    )
+    chat = result.scalar_one_or_none()
+
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    # Удаляем все сообщения этого чата
+    await db.execute(
+        delete(Message).where(Message.chat_id == chat_id)
+    )
+
+    # Можно обнулить last_message_at
+    chat.last_message_at = None
+
+    await db.commit()
+
+    # 204 No Content — тела нет
+    return

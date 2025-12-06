@@ -39,3 +39,9 @@ class Tutor(Base):
     course = relationship("Course", back_populates="tutors")
     chats = relationship("Chat", back_populates="tutor", cascade="all, delete-orphan")
     feedbacks = relationship("Feedback", back_populates="tutor")
+    progress_items = relationship(
+        "Progress",
+        back_populates="tutor",
+        cascade="all, delete-orphan",
+    )
+

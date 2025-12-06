@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.user import User
-from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
+from app.schemas.user import UserCreate, UserLogin, UserResponse, Token, ChangePasswordRequest, UserSettingsUpdate
 from app.utils.security import hash_password, verify_password, create_access_token
 from app.utils.dependencies import get_current_user
 
@@ -171,3 +171,63 @@ async def get_current_user_info(
     Если токен невалидный, вернется 401 Unauthorized
     """
     return current_user
+
+
+
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    data: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Смена пароля текущего пользователя.
+
+    Шаги:
+    1. Проверяем старый пароль.
+    2. Если ок — хешируем новый и сохраняем.
+    """
+    # Проверяем, что старый пароль верный
+    if not verify_password(data.old_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect old password",
+        )
+
+    # Хешируем новый пароль
+    current_user.hashed_password = hash_password(data.new_password)
+
+    # Сохраняем изменения
+    await db.commit()
+
+    # 204 No Content — тело ответа не нужно
+    return
+
+
+
+@router.patch("/me/settings", response_model=UserResponse)
+async def update_settings(
+    settings_data: UserSettingsUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Обновление настроек пользователя (например, темы интерфейса).
+    Храним всё в поле preferences как JSON.
+    """
+    # Текущие настройки
+    prefs = current_user.preferences or {}
+
+    # Обновляем только те поля, которые пришли
+    if settings_data.theme is not None:
+        prefs["theme"] = settings_data.theme
+
+    current_user.preferences = prefs
+
+    await db.commit()
+    await db.refresh(current_user)
+
+    return current_user
+
