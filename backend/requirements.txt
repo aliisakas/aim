@@ -1,0 +1,25 @@
+# Веб-фреймворк
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+
+# Работа с базой данных
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# Валидация данных (ОБНОВЛЕННЫЕ ВЕРСИИ!)
+pydantic==2.10.3
+pydantic-settings==2.6.1
+email-validator==2.2.0
+
+# Аутентификация
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20
+
+# HTTP клиент
+httpx==0.28.1
+
+# Работа с датами
+python-dateutil==2.9.0
