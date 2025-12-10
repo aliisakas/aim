@@ -1,0 +1,9 @@
+если в кратце:
+Ключевые изменения
+Новые файлы: app/services/ai_client.py, app/services/orchestrator.py, обновлен app/api/messages.py.
+
+.env: Добавлен AICORE_URL=http://localhost:1234 (LM Studio).
+
+API workflow: POST сообщение → сохраняется → Orchestrator строит промпт (system + history + TODO RAG) → Qwen 3 → ответ в чат.​
+
+Тестировано: Логин, чат с Python-тутором, ответы от Qwen 3 
