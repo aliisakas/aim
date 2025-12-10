@@ -1,100 +1,40 @@
-"""
-HTTP клиент для общения с AI Core микросервисом (команда Андрея).
-Этот класс отправляет запросы к API Андрея.
-"""
+﻿import httpx
+import asyncio
+from typing import List, Dict
+import logging
+import json
 
-import httpx
-from typing import Dict, Any
-from app.config import settings
-
+logger = logging.getLogger(__name__)
 
 class AIClient:
-    """
-    Клиент для взаимодействия с AI Core API.
-    Отправляет запросы к микросервису команды Андрея.
-    """
-    
-    def __init__(self):
-        """
-        Инициализация клиента.
-        Адрес AI Core берется из настроек (.env файл)
-        """
-        self.base_url = settings.AI_CORE_URL  # Например: http://localhost:8001
-        self.timeout = 60.0  # AI может думать долго, даем 60 секунд
-    
-    async def generate_response(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Отправка запроса к AI Core для генерации ответа.
-        
-        Параметры:
-            request_data: Словарь с данными запроса
-                {
-                  "chat_id": 1,
-                  "tutor_id": 1,
-                  "model_id": "tutor_python_v1",
-                  "knowledge_base_id": "python_course",
-                  "system_prompt": "Ты - AI-репетитор по Python...",
-                  "message": "Что такое циклы?",
-                  "history": [
-                    {"role": "user", "content": "Привет"},
-                    {"role": "assistant", "content": "Здравствуй!"}
-                  ],
-                  "attachments": [...]
-                }
-        
-        Возвращает:
-            Словарь с ответом от AI Core:
-                {
-                  "content": "Цикл for в Python используется для...",
-                  "tokens_used": 150,
-                  "processing_time": 2.3
-                }
-        
-        Исключения:
-            Exception: Если AI Core недоступен или вернул ошибку
-        """
-        
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            try:
-                # === ВАЖНО: Этот endpoint должен предоставить команда Андрея ===
-                # Уточни у Андрея точный адрес их API
-                response = await client.post(
-                    f"{self.base_url}/api/v1/generate",  # Адрес API Андрея
-                    json=request_data,
-                    headers={"Content-Type": "application/json"}
-                )
-                
-                # Проверяем статус ответа
-                response.raise_for_status()
-                
-                # Возвращаем JSON ответ
-                return response.json()
-            
-            except httpx.TimeoutException:
-                # AI Core не ответил за 60 секунд
-                raise Exception("AI Core service timeout - model is taking too long to respond")
-            
-            except httpx.HTTPStatusError as e:
-                # AI Core вернул ошибку (4xx или 5xx)
-                raise Exception(
-                    f"AI Core returned error: {e.response.status_code} - {e.response.text}"
-                )
-            
-            except httpx.RequestError as e:
-                # Не удалось подключиться к AI Core
-                raise Exception(f"Failed to connect to AI Core: {str(e)}")
+    def __init__(self, base_url: str = "http://localhost:1234", timeout: float = 120.0):
+        self.base_url = base_url
+        self.model_id = "local-model"
+        self.timeout = timeout
+        self.client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
     
     async def health_check(self) -> bool:
-        """
-        Проверка доступности AI Core сервиса.
-        Полезно для мониторинга.
-        
-        Возвращает:
-            True если AI Core работает, False если недоступен
-        """
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}/health")
-                return response.status_code == 200
-        except:
+            response = await self.client.get("/v1/models")
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"AI health check failed: {e}")
             return False
+    
+    async def chat_completion(self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 1024, stream: bool = False) -> str:
+        payload = {"model": self.model_id, "messages": messages, "temperature": temperature, "max_tokens": max_tokens, "stream": stream, "top_p": 0.95}
+        try:
+            logger.info(f"Sending to AI: {len(messages)} messages")
+            response = await self.client.post("/v1/chat/completions", json=payload)
+            if response.status_code != 200:
+                raise Exception(f"AI error {response.status_code}")
+            result = response.json()
+            answer = result["choices"][0]["message"]["content"]
+            logger.info(f"Got response: {len(answer)} chars")
+            return answer
+        except Exception as e:
+            logger.error(f"AI failed: {e}")
+            raise
+    
+    async def close(self):
+        await self.client.aclose()

@@ -36,7 +36,9 @@ app.add_middleware(
     allow_methods=["*"],  # Разрешить все методы (GET, POST, PUT, DELETE и т.д.)
     allow_headers=["*"],  # Разрешить все заголовки
 )
-
+# для тестового эндпоинта
+from app.api.test_ai import router as test_router
+app.include_router(test_router, tags=["test"])
 
 # === ПОДКЛЮЧЕНИЕ РОУТЕРОВ ===
 # Каждый роутер отвечает за свою группу endpoints

@@ -1,26 +1,141 @@
 """
-Orchestrator - оркестратор запросов к AI.
-Центральный компонент, который координирует взаимодействие с AI Core.
+Orchestrator - главный дирижёр между Backend и AI Core.
+
+Его задача:
+1. Собрать контекст из истории чата
+2. Если есть RAG - найти релевантные документы
+3. Собрать финальный промпт
+4. Отправить в AI Core
+5. Вернуть ответ
 """
 
-from typing import List, Dict, Optional
+from typing import List, Optional, Dict
 from app.models.message import Message
 from app.models.tutor import Tutor
 from app.services.ai_client import AIClient
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
     """
-    Оркестратор запросов к AI.
-    Подготавливает данные и вызывает AI Core для генерации ответов.
+    Оркестратор для управления диалогом между пользователем и AI.
     """
     
     def __init__(self, ai_client: AIClient):
         """
-        Параметры:
-            ai_client: Экземпляр AIClient для общения с AI Core
+        Args:
+            ai_client: Экземпляр AIClient для работы с LLM
         """
         self.ai_client = ai_client
+    
+    def _format_message_history(
+        self, 
+        messages: List[Message],
+        max_messages: int = 10
+    ) -> List[Dict[str, str]]:
+        """
+        Преобразует историю сообщений из БД в формат OpenAI API.
+        
+        Args:
+            messages: Список объектов Message из БД
+            max_messages: Сколько последних сообщений включить
+        
+        Returns:
+            Список вида:
+            [
+                {"role": "user", "content": "Что такое цикл?"},
+                {"role": "assistant", "content": "Цикл это..."},
+                ...
+            ]
+        """
+        
+        # Берём только последние max_messages
+        recent_messages = messages[-max_messages:] if len(messages) > max_messages else messages
+        
+        formatted = []
+        for msg in recent_messages:
+            formatted.append({
+                "role": msg.role,  # "user" или "assistant"
+                "content": msg.content
+            })
+        
+        return formatted
+    
+    def _build_system_prompt(self, tutor: Tutor) -> str:
+        """
+        Формирует системный промпт для модели.
+        
+        Системный промпт определяет "личность" и поведение AI.
+        
+        Args:
+            tutor: Объект репетитора с его настройками
+        
+        Returns:
+            Системный промпт, например:
+            "Ты — терпеливый репетитор по Python для начинающих.
+             Объясняй концепции простыми словами с примерами.
+             Если ученик ошибается, задавай наводящие вопросы..."
+        """
+        
+        # TODO: Когда RAG будет готов, можно добавить контекст из документов
+        # Пока просто используем промпт из БД
+        
+        if tutor.system_prompt:
+            return tutor.system_prompt
+        
+        # Fallback промпт если в БД ничего нет
+        return f"""Ты — репетитор по курсу "{tutor.name}".
+Помогай пользователю учиться, объясняя просто и понятно.
+Всегда приводи примеры кода или формулы.
+Если ученик затрудняется, задай наводящий вопрос вместо готового ответа."""
+    
+    def _build_rag_context(self, tutor: Tutor) -> Optional[str]:
+        """
+        Получает релевантный контекст из RAG (если доступен).
+        
+        ВАЖНО: Эта функция заполняется ПОЗЖЕ, когда RAG будет готов.
+        
+        На данный момент она просто возвращает None.
+        
+        Args:
+            tutor: Репетитор для которого нужен контекст
+        
+        Returns:
+            Строка с контекстом из документов или None
+        
+        Example возвращаемого значения:
+        ```
+        "Из документов найдено:
+        
+        === Лекция: Циклы в Python ===
+        Цикл for используется для итерации по элементам:
+        ```python
+        for i in range(5):
+            print(i)
+        ```
+        
+        === Задача #12: Вывести чётные числа ===
+        Решение:
+        ```python
+        for i in range(10):
+            if i % 2 == 0:
+                print(i)
+        ```
+        "
+        ```
+        """
+        
+        # TODO: Позже добавить вызов RAG API
+        # rag_results = await rag_client.search(
+        #     query=user_message,
+        #     tutor_id=tutor.id,
+        #     top_k=3
+        # )
+        # return rag_results.format_as_context()
+        
+        return None  # На данный момент RAG нет
     
     async def process_user_message(
         self,
@@ -31,77 +146,78 @@ class Orchestrator:
         attachments: Optional[List[Dict]] = None
     ) -> str:
         """
-        Главная функция оркестрации.
-        Получает сообщение пользователя, подготавливает контекст,
-        отправляет в AI Core и возвращает ответ.
+        Основной метод обработки сообщения пользователя.
         
-        Параметры:
-            chat_id: ID чата
-            tutor: Объект репетитора (с model_id, system_prompt и т.д.)
-            user_message: Текст сообщения пользователя
-            message_history: История предыдущих сообщений (для контекста)
-            attachments: Прикрепленные файлы (если есть)
+        WORKFLOW:
+        1. Формируем историю в формате OpenAI
+        2. Собираем контекст из RAG (если есть)
+        3. Строим финальный промпт
+        4. Отправляем в AI Core
+        5. Возвращаем ответ
         
-        Возвращает:
-            Строку с ответом AI
+        Args:
+            chat_id: ID чата (для логирования)
+            tutor: Репетитор (его промпт и настройки)
+            user_message: Текст сообщения от пользователя
+            message_history: История сообщений из БД (для контекста)
+            attachments: Загруженные файлы (пока не используются)
         
-        Процесс:
-            1. Форматируем историю сообщений в нужный формат
-            2. Формируем запрос для AI Core с всеми данными
-            3. Вызываем AI Core API
-            4. Извлекаем и возвращаем текст ответа
+        Returns:
+            Текст ответа AI для сохранения в БД
+        
+        Raises:
+            Exception если AI Core недоступен
         """
         
-        # === ШАГ 1: Форматируем историю сообщений ===
-        # Преобразуем SQLAlchemy объекты в простые словари
-        formatted_history = self._format_message_history(message_history)
+        logger.info(f"Processing message in chat {chat_id}")
         
-        # === ШАГ 2: Подготавливаем данные для AI Core ===
-        ai_request = {
-            "chat_id": chat_id,
-            "tutor_id": tutor.id,
-            "model_id": tutor.model_id,  # Например: "tutor_python_v1"
-            "knowledge_base_id": tutor.knowledge_base_id,  # ID в векторной БД
-            "system_prompt": tutor.system_prompt,  # Базовый промпт репетитора
-            "message": user_message,  # Вопрос пользователя
-            "history": formatted_history,  # Последние 20 сообщений
-            "attachments": attachments or []  # Прикрепленные файлы
-        }
+        # === ШАГ 1: Формируем историю ===
+        formatted_history = self._format_message_history(message_history, max_messages=10)
         
-        # === ШАГ 3: Вызываем AI Core API ===
-        # AIClient отправит HTTP POST запрос к команде Андрея
-        ai_response = await self.ai_client.generate_response(ai_request)
+        # === ШАГ 2: Строим системный промпт ===
+        system_prompt = self._build_system_prompt(tutor)
         
-        # === ШАГ 4: Извлекаем текст ответа ===
-        # AI Core вернет JSON типа: {"content": "Ответ...", "tokens_used": 150}
-        return ai_response["content"]
-    
-    def _format_message_history(self, messages: List[Message]) -> List[Dict]:
-        """
-        Форматирует историю сообщений из SQLAlchemy объектов в список словарей.
-        Берем только последние N сообщений, чтобы не перегружать контекст.
+        # === ШАГ 3: Получаем контекст из RAG ===
+        rag_context = self._build_rag_context(tutor)
         
-        Параметры:
-            messages: Список объектов Message из БД
+        # === ШАГ 4: Собираем финальный список сообщений для API ===
         
-        Возвращает:
-            Список словарей вида:
-            [
-              {"role": "user", "content": "Привет"},
-              {"role": "assistant", "content": "Здравствуй!"},
-              {"role": "user", "content": "Что такое циклы?"}
-            ]
-        """
-        
-        # Берем последние 20 сообщений (или меньше если их меньше)
-        # Это ограничение нужно чтобы не превысить лимит токенов модели
-        recent_messages = messages[-20:] if len(messages) > 20 else messages
-        
-        # Преобразуем в простые словари
-        return [
-            {
-                "role": msg.role,  # "user" или "assistant"
-                "content": msg.content  # Текст сообщения
-            }
-            for msg in recent_messages
+        messages = [
+            {"role": "system", "content": system_prompt}
         ]
+        
+        # Добавляем контекст из RAG если есть
+        if rag_context:
+            messages.append({
+                "role": "system",
+                "content": f"Релевантная информация из базы знаний:\n\n{rag_context}"
+            })
+        
+        # Добавляем историю диалога
+        messages.extend(formatted_history)
+        
+        # Добавляем текущее сообщение пользователя
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+        
+        # === ШАГ 5: Отправляем в AI Core ===
+        logger.info(f"Sending to AI Core: {len(messages)} messages total")
+        
+        try:
+            response = await self.ai_client.chat_completion(
+                messages=messages,
+                temperature=0.7,  # Небольшая креативность
+                max_tokens=1024,  # Обычный размер ответа репетитора
+                stream=False
+            )
+            
+            logger.info(f"Got response from AI Core: {len(response)} chars")
+            
+            return response
+        
+        except Exception as e:
+            logger.error(f"Failed to get AI response: {e}")
+            # Возвращаем "graceful" сообщение об ошибке вместо краша
+            return f"❌ Извините, репетитор временно недоступен. Ошибка: {str(e)}"
